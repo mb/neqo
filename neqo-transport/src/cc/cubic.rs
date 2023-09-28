@@ -92,16 +92,21 @@ impl Cubic {
     /// From that equation we can calculate K as:
     /// K = cubic_root((W_max - W_cubic) / C / MSS);
     fn calc_k(&self, curr_cwnd: f64) -> f64 {
-        ((self.w_max - curr_cwnd) / CUBIC_C / MAX_DATAGRAM_SIZE_F64).cbrt()
+        let res = ((self.w_max - curr_cwnd) / CUBIC_C / MAX_DATAGRAM_SIZE_F64).cbrt();
+        println!("CUBIC calc_k(curr_cwnd: {curr_cwnd}) -> {res} ({self:?})");
+        res
     }
 
     /// W_cubic(t) = C*(t-K)^3 + W_max (Eq. 1)
     /// t is relative to the start of the congestion avoidance phase and it is in seconds.
     fn w_cubic(&self, t: f64) -> f64 {
-        CUBIC_C * (t - self.k).powi(3) * MAX_DATAGRAM_SIZE_F64 + self.w_max
+        let res = CUBIC_C * (t - self.k).powi(3) * MAX_DATAGRAM_SIZE_F64 + self.w_max;
+        println!("CUBIC w_cubic(t: {t}) -> {res} ({self:?})");
+        res
     }
 
     fn start_epoch(&mut self, curr_cwnd_f64: f64, new_acked_f64: f64, now: Instant) {
+        println!("CUBIC start_epoch(curr_cwnd_f64: {curr_cwnd_f64}, new_acked_f64: {new_acked_f64}, now: {now:?}) ({self:?})");
         self.ca_epoch_start = Some(now);
         // reset tcp_acked_bytes and estimated_tcp_cwnd;
         self.tcp_acked_bytes = new_acked_f64;
@@ -172,6 +177,7 @@ impl WindowAdjustment for Cubic {
         // This effectively limits target_cwnd to (1 + 1 / EXPONENTIAL_GROWTH_REDUCTION) cwnd.
         acked_to_increase =
             acked_to_increase.max(EXPONENTIAL_GROWTH_REDUCTION * MAX_DATAGRAM_SIZE_F64);
+        println!("CUBIC bytes_for_cwnd_increase(curr_cwnd: {curr_cwnd}, new_acked_bytes: {new_acked_bytes}, min_rtt: {min_rtt:?}, now: {now:?}) -> {acked_to_increase} ({self:?})");
         acked_to_increase as usize
     }
 
@@ -187,10 +193,12 @@ impl WindowAdjustment for Cubic {
             curr_cwnd_f64
         };
         self.ca_epoch_start = None;
-        (
+        let res = (
             curr_cwnd * CUBIC_BETA_USIZE_DIVIDEND / CUBIC_BETA_USIZE_DIVISOR,
             acked_bytes * CUBIC_BETA_USIZE_DIVIDEND / CUBIC_BETA_USIZE_DIVISOR,
-        )
+        );
+        println!("CUBIC reduce_cwnd(curr_cwnd: {curr_cwnd}, acked_bytes: {acked_bytes}) -> {res:?} ({self:?})");
+        res
     }
 
     fn on_app_limited(&mut self) {
