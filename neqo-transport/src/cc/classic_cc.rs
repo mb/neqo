@@ -45,7 +45,7 @@ enum State {
 
 impl State {
     pub fn in_recovery(self) -> bool {
-        matches!(self, Self::RecoveryStart | Self::Recovery)
+        matches!(self, Self::Recovery)
     }
 
     pub fn in_slow_start(self) -> bool {
@@ -435,8 +435,8 @@ impl<T: WindowAdjustment> ClassicCongestionControl<T> {
     fn after_recovery_start(&mut self, packet: &SentPacket) -> bool {
         // At the start of the first recovery period, if the state is
         // transient, all packets will have been sent before recovery.
-        self.recovery_start
-            .map_or(!self.state.transient(), |t| packet.time_sent >= t)
+        !self.state.transient() && self.recovery_start
+            .map_or(true, |t| packet.time_sent >= t)
     }
 
     /// Handle a congestion event.
