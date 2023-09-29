@@ -436,9 +436,11 @@ impl<T: WindowAdjustment> ClassicCongestionControl<T> {
     /// Handle a congestion event.
     /// Returns true if this was a true congestion event.
     fn on_congestion_event(&mut self, last_packet: &SentPacket) -> bool {
+        println!("CLASSIC_CC on_congestion_event(last_packet: {last_packet:?}) ({self:?})");
         // Start a new congestion event if lost packet was sent after the start
         // of the previous congestion recovery period.
         if !self.after_recovery_start(last_packet) {
+            println!("CLASSIC_CC before_recovery_start");
             return false;
         }
 
