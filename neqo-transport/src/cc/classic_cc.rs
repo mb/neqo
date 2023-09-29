@@ -165,12 +165,6 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
             assert!(self.bytes_in_flight >= pkt.size);
             self.bytes_in_flight -= pkt.size;
 
-            if !self.after_recovery_start(pkt) {
-                // Do not increase congestion window for packets sent before
-                // recovery last started.
-                continue;
-            }
-
             if self.state.in_recovery() {
                 self.set_state(State::CongestionAvoidance);
                 qlog::metrics_updated(&mut self.qlog, &[QlogMetric::InRecovery(false)]);
