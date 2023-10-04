@@ -57,6 +57,7 @@ impl Pacer {
     /// This returns a time, which could be in the past (this object doesn't know what
     /// the current time is).
     pub fn next(&self, rtt: Duration, cwnd: usize) -> Instant {
+        return self.t;
         if self.c >= self.p {
             qtrace!([self], "next {}/{:?} no wait = {:?}", cwnd, rtt, self.t);
             self.t
