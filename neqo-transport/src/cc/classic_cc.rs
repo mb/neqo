@@ -9,6 +9,7 @@
 
 use std::cmp::{max, min};
 use std::fmt::{self, Debug, Display};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use super::CongestionControl;
@@ -99,8 +100,11 @@ pub trait WindowAdjustment: Display + Debug {
     fn set_last_max_cwnd(&mut self, last_max_cwnd: f64);
 }
 
+static ID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
 #[derive(Debug)]
 pub struct ClassicCongestionControl<T> {
+    id: i32,
     cc_algorithm: T,
     state: State,
     congestion_window: usize, // = kInitialWindow
@@ -110,6 +114,7 @@ pub struct ClassicCongestionControl<T> {
     recovery_start: Option<Instant>,
 
     qlog: NeqoQlog,
+    start_time: Instant,
 }
 
 impl<T: WindowAdjustment> Display for ClassicCongestionControl<T> {
@@ -161,7 +166,11 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
         );
 
         let mut new_acked = 0;
-        for pkt in acked_pkts.iter().filter(|pkt| pkt.cc_outstanding()) {
+        for pkt in acked_pkts.iter() {
+            println!("CLASSIC_CC packet_ack id={}, now={}, pn={}, ps={}, ignored={}, lost={}", self.id, now.duration_since(self.start_time).as_micros(), pkt.pn, pkt.size, (!pkt.cc_outstanding()) as i32, pkt.lost() as i32);
+            if !pkt.cc_outstanding() {
+                continue;
+            }
             assert!(self.bytes_in_flight >= pkt.size);
             self.bytes_in_flight -= pkt.size;
 
@@ -181,6 +190,7 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
 
         if is_app_limited {
             self.cc_algorithm.on_app_limited();
+            println!("CLASSIC_CC on_packets_acked id={}, now={}, limited=1, bytes_in_flight={}, cwnd={}, state={:?}, new_acked={}", self.id, now.duration_since(self.start_time).as_micros(), self.bytes_in_flight, self.congestion_window, self.state, new_acked);
             return;
         }
 
@@ -216,15 +226,17 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
                 self.acked_bytes = 0;
                 self.congestion_window += MAX_DATAGRAM_SIZE;
             }
+
             self.acked_bytes += new_acked;
             if self.acked_bytes >= bytes_for_increase {
                 self.acked_bytes -= bytes_for_increase;
                 self.congestion_window += MAX_DATAGRAM_SIZE; // or is this the current MTU?
             }
             // The number of bytes we require can go down over time with Cubic.
-            // That might result in an excessive rate of increase, so limit the number of unused
+            // That might result in an excessive rate of increase, so limit the number of unuse
             // acknowledged bytes after increasing the congestion window twice.
             self.acked_bytes = min(bytes_for_increase, self.acked_bytes);
+
         }
         qlog::metrics_updated(
             &mut self.qlog,
@@ -233,6 +245,7 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
                 QlogMetric::BytesInFlight(self.bytes_in_flight),
             ],
         );
+        println!("CLASSIC_CC on_packets_acked id={}, now={}, limited=0, bytes_in_flight={}, cwnd={}, state={:?}, new_acked={}", self.id, now.duration_since(self.start_time).as_micros(), self.bytes_in_flight, self.congestion_window, self.state, new_acked);
     }
 
     /// Update congestion controller state based on lost packets.
@@ -246,8 +259,10 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
         if lost_packets.is_empty() {
             return false;
         }
+        let now = Instant::now();
 
         for pkt in lost_packets.iter().filter(|pkt| pkt.cc_in_flight()) {
+            println!("CLASSIC_CC packet_lost id={}, now={}, pn={}, ps={}", self.id, now.duration_since(self.start_time).as_micros(), pkt.pn, pkt.size);
             assert!(self.bytes_in_flight >= pkt.size);
             self.bytes_in_flight -= pkt.size;
         }
@@ -265,6 +280,7 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
             pto,
             lost_packets,
         );
+        println!("CLASSIC_CC on_packets_lost id={} now={}, bytes_in_flight={}, cwnd={}, state={:?}", self.id, now.duration_since(self.start_time).as_micros(), self.bytes_in_flight, self.congestion_window, self.state);
         congestion || persistent_congestion
     }
 
@@ -311,6 +327,8 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
             &mut self.qlog,
             &[QlogMetric::BytesInFlight(self.bytes_in_flight)],
         );
+        let now = Instant::now();
+        println!("CLASSIC_CC packet_sent id={}, now={}, pn={}, ps={}", self.id, now.duration_since(self.start_time).as_micros(), pkt.pn, pkt.size);
     }
 
     /// Whether a packet can be sent immediately as a result of entering recovery.
@@ -321,7 +339,8 @@ impl<T: WindowAdjustment> CongestionControl for ClassicCongestionControl<T> {
 
 impl<T: WindowAdjustment> ClassicCongestionControl<T> {
     pub fn new(cc_algorithm: T) -> Self {
-        Self {
+        let new = Self {
+            id: ID.fetch_add(1, Ordering::SeqCst),
             cc_algorithm,
             state: State::SlowStart,
             congestion_window: CWND_INITIAL,
@@ -330,7 +349,10 @@ impl<T: WindowAdjustment> ClassicCongestionControl<T> {
             ssthresh: usize::MAX,
             recovery_start: None,
             qlog: NeqoQlog::disabled(),
-        }
+            start_time: Instant::now(),
+        };
+        println!("CLASSIC_CC new {}", new.id);
+        new
     }
 
     #[cfg(test)]
