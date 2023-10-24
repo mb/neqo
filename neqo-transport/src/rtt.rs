@@ -22,7 +22,7 @@ use crate::tracking::PacketNumberSpace;
 
 /// The smallest time that the system timer (via `sleep()`, `nanosleep()`,
 /// `select()`, or similar) can reliably deliver; see `neqo_common::hrtime`.
-pub const GRANULARITY: Duration = Duration::from_millis(1);
+pub const GRANULARITY: Duration = Duration::from_millis(2);
 // Defined in -recovery 6.2 as 333ms but using lower value.
 pub(crate) const INITIAL_RTT: Duration = Duration::from_millis(100);
 
@@ -143,7 +143,7 @@ impl RttEstimate {
         // loss_delay = kTimeThreshold * max(latest_rtt, smoothed_rtt)
         // loss_delay = max(loss_delay, kGranularity)
         let rtt = max(self.latest_rtt, self.smoothed_rtt);
-        max(rtt * 9 / 8, GRANULARITY)
+        max(rtt * 17 / 8, GRANULARITY)
     }
 
     pub fn first_sample_time(&self) -> Option<Instant> {
